@@ -1,0 +1,185 @@
+plugins {
+    id "java"
+    id "org.jetbrains.kotlin.jvm" version "2.1.0"
+    id "edu.wpi.first.GradleRIO" version "2025.3.2"
+    id "idea"
+    id "com.diffplug.spotless" version "7.2.1"
+}
+
+def javaVersion = JavaVersion.VERSION_17
+def kotlinJvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.@Companion.fromTarget(javaVersion.toString())
+
+java {
+    sourceCompatibility = javaVersion
+    targetCompatibility = javaVersion
+}
+
+def ROBOT_MAIN_CLASS = "frc.robot.Main"
+
+// Define my targets (RoboRIO) and artifacts (deployable files)
+// This is added by GradleRIO's backing project DeployUtils.
+deploy {
+    targets {
+        roborio(getTargetTypeClass('RoboRIO')) {
+            // Team number is loaded either from the .wpilib/wpilib_preferences.json
+            // or from command line. If not found an exception will be thrown.
+            // You can use getTeamOrDefault(team) instead of getTeamNumber if you
+            // want to store a team number in this file.
+            team = project.frc.getTeamNumber()
+            debug = project.frc.getDebugOrDefault(false)
+
+            artifacts {
+                // First part is artifact name, 2nd is artifact type
+                // getTargetTypeClass is a shortcut to get the class type using a string
+
+                frcJava(getArtifactTypeClass('FRCJavaArtifact')) {
+                }
+
+                // Static files artifact
+                frcStaticFileDeploy(getArtifactTypeClass('FileTreeArtifact')) {
+                    files = project.fileTree('src/main/deploy')
+                    directory = '/home/lvuser/deploy'
+                    deleteOldFiles = false // Change to true to delete files on roboRIO that no
+                    // longer exist in deploy directory of this project
+                }
+            }
+        }
+    }
+}
+
+def deployArtifact = deploy.targets.roborio.artifacts.frcJava
+
+// Set to true to use debug for JNI.
+wpi.java.debugJni = false
+
+// Set this to true to enable desktop support.
+//noinspection GroovyUnusedAssignment
+def includeDesktopSupport = true
+
+dependencies {
+    annotationProcessor wpi.java.deps.wpilibAnnotations()
+    implementation wpi.java.deps.wpilib()
+    implementation wpi.java.vendor.java()
+
+    roborioDebug wpi.java.deps.wpilibJniDebug(wpi.platforms.roborio)
+    roborioDebug wpi.java.vendor.jniDebug(wpi.platforms.roborio)
+
+    roborioRelease wpi.java.deps.wpilibJniRelease(wpi.platforms.roborio)
+    roborioRelease wpi.java.vendor.jniRelease(wpi.platforms.roborio)
+
+    nativeDebug wpi.java.deps.wpilibJniDebug(wpi.platforms.desktop)
+    nativeDebug wpi.java.vendor.jniDebug(wpi.platforms.desktop)
+    simulationDebug wpi.sim.enableDebug()
+
+    nativeRelease wpi.java.deps.wpilibJniRelease(wpi.platforms.desktop)
+    nativeRelease wpi.java.vendor.jniRelease(wpi.platforms.desktop)
+    simulationRelease wpi.sim.enableRelease()
+
+}
+
+// Simulation configuration (e.g. environment variables).
+wpi.sim.addGui().defaultEnabled = true
+wpi.sim.addDriverstation()
+
+// Setting up my Jar File. In this case, adding all libraries into the main jar ('fat jar')
+// in order to make them all available at runtime. Also adding the manifest so WPILib
+// knows where to look for our Robot Class.
+jar {
+    from { configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) } }
+    from sourceSets.main.allSource
+    manifest edu.wpi.first.gradlerio.GradleRIOPlugin.javaManifest(ROBOT_MAIN_CLASS)
+    duplicatesStrategy = DuplicatesStrategy.INCLUDE
+}
+
+// Configure jar and deploy tasks
+deployArtifact.jarTask = jar
+wpi.java.configureExecutableTasks(jar)
+wpi.java.configureTestTasks(test)
+
+tasks.withType(JavaCompile) {
+    // Configure string concat to always inline compile
+    options.compilerArgs.add '-XDstringConcat=inline'
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget.set(kotlinJvmTarget)
+        // https://kotlinlang.org/docs/gradle-configure-project.html#gradle-java-toolchains-support
+        jvmToolchain(Integer.valueOf(javaVersion.toString()))
+    }
+}
+
+idea {
+    project {
+        // The project.sourceCompatibility setting is not always picked up, so we set explicitly
+        languageLevel = javaVersion
+    }
+    module {
+        // Improve development & (especially) debugging experience (and IDEA's capabilities) by having libraries' source & javadoc attached
+        downloadJavadoc = true
+        downloadSources = true
+        // Exclude the following from indexing and search
+        excludeDirs += file(".run")
+        excludeDirs += file(".vscode")
+    }
+}
+
+boolean isNewer(String versionA, String versionB) {
+    def parseVersion = { String version ->
+        if (version.startsWith('v')) version = version.substring(1)
+        def parts = version.split("\\.")
+        return [major: parts[0].toInteger(), minor: parts[1].toInteger(), patch: parts[2].toInteger()]
+    }
+
+    def vA = parseVersion(versionA)
+    def vB = parseVersion(versionB)
+
+    if (vA.major != vB.major) {
+        return vA.major > vB.major
+    } else if (vA.minor != vB.minor) {
+        return vA.minor > vB.minor
+    } else {
+        return vA.patch > vB.patch
+    }
+}
+
+
+task updateVendorDeps {
+    description = "Update vendor dependencies"
+    group = "dependencies"
+
+    def jsonDir = file("vendordeps")
+    def slurper = new groovy.json.JsonSlurper()
+
+    doLast {
+        jsonDir.eachFile { File file ->
+            if (file.name.startsWith("WPILibNewCommands")) return // WPILibNewCommands doesn't have a json url, skip it
+            if (file.name.endsWith(".json")) {
+                def json = slurper.parse(file)
+                def version = json.version
+                def url = json.jsonUrl
+
+                try {
+                    def remoteJsonText = new URL(url).text
+                    def remoteJson = slurper.parseText(remoteJsonText)
+                    def remoteVersion = remoteJson.version
+
+                    if (isNewer(remoteVersion, version)) {
+                        file.text = remoteJsonText
+                        println("Updated ${file.name} from $version to $remoteVersion")
+                    } else {
+                        println("${remoteJson.name} is up to date")
+                    }
+                } catch (Exception e) {
+                    println("Failed to update ${file.name}: ${e.message}")
+                }
+            }
+        }
+    }
+}
+
+spotless {
+    kotlin {
+        ktfmt().kotlinlangStyle()
+    }
+}
