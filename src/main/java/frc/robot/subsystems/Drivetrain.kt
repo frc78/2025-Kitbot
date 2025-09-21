@@ -25,7 +25,7 @@ object Drivetrain : Subsystem {
         // breakers.
         val config =
             SparkMaxConfig().apply {
-                voltageCompensation(12.0)
+                voltageCompensation(10.0)
                 smartCurrentLimit(60)
             }
 
@@ -53,8 +53,8 @@ object Drivetrain : Subsystem {
             PersistMode.kPersistParameters,
         )
 
-        // Set conifg to inverted and then apply to left leader. Set Left side inverted
-        // so that postive values drive both sides forward
+        // Set config to inverted and then apply to left leader. Set Left side inverted
+        // so that positive values drive both sides forward
         config.inverted(true)
         leftLeader.configure(config, ResetMode.kResetSafeParameters, PersistMode.kPersistParameters)
     }
