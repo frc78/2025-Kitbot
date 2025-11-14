@@ -7,9 +7,9 @@ import com.revrobotics.spark.SparkMax
 import com.revrobotics.spark.config.SparkMaxConfig
 import edu.wpi.first.wpilibj.drive.DifferentialDrive
 import edu.wpi.first.wpilibj2.command.Command
-import edu.wpi.first.wpilibj2.command.Subsystem
+import edu.wpi.first.wpilibj2.command.SubsystemBase
 
-object Drivetrain : Subsystem {
+object Drivetrain : SubsystemBase() {
     private val leftLeader = SparkMax(1, SparkLowLevel.MotorType.kBrushless)
     private val leftFollower = SparkMax(2, SparkLowLevel.MotorType.kBrushless)
     private val rightLeader = SparkMax(3, SparkLowLevel.MotorType.kBrushless)

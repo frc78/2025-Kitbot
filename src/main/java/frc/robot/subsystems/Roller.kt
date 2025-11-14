@@ -5,9 +5,9 @@ import com.revrobotics.spark.SparkLowLevel
 import com.revrobotics.spark.SparkMax
 import com.revrobotics.spark.config.SparkMaxConfig
 import edu.wpi.first.wpilibj2.command.Command
-import edu.wpi.first.wpilibj2.command.Subsystem
+import edu.wpi.first.wpilibj2.command.SubsystemBase
 
-object Roller : Subsystem {
+object Roller : SubsystemBase() {
     private val motor = SparkMax(5, SparkLowLevel.MotorType.kBrushless)
 
     init {
