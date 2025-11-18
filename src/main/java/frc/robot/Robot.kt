@@ -52,7 +52,7 @@ object Robot : TimedRobot() {
         RobotModeTriggers.autonomous()
             .onTrue(
                 Drivetrain.driveArcade({ 0.5 }, { 0.0 })
-                    .withTimeout(1.0)
+                    .withTimeout(3.0)
                     .andThen(Roller.runRoller({ 0.5 }, { 0.0 }).withTimeout(2.0))
             )
     }
